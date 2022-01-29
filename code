@@ -1,0 +1,117 @@
+import pandas as pd
+
+df_full = pd.read_csv("./基酒数据(全特征).csv")
+df_full.set_index('Unnamed: 0',inplace = True)
+
+import xgboost as xgb
+from xgboost import XGBRegressor
+from xgboost import plot_importance
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.model_selection import cross_validate
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error,r2_score
+from matplotlib.pylab import rcParams
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import cross_val_predict,cross_val_score
+from sklearn import metrics
+import scipy
+
+list1 = []
+target = "Group"
+predictors = [x for x in df_full.columns if x not in [target]]
+X = df_full[predictors]
+Y = df_full[target]
+X_train,X_val,y_train,y_val = train_test_split(X,Y,test_size=0.2,random_state= 123)
+model = XGBRegressor()
+predicted = cross_val_score(model,X_train,y_train,cv = 10,scoring="r2")
+list1.append(np.mean(predicted))
+
+from sklearn.feature_selection import SelectKBest,chi2,f_classif,mutual_info_classif,SelectPercentile,f_regression, mutual_info_regression
+
+
+def model_r2_score(p):
+    target = "Group"
+    predictors = [x for x in df_full.columns if x not in [target]]
+    X = df_full.loc[:, predictors]
+    X_indices = np.arange(X.shape[-1])
+    Y = df_full.loc[:, target]
+    a = {}
+    for i, k in enumerate(df_full.columns):
+        a[i] = k
+    # 2.1.1.1 f_regression
+    selector2_1_1 = SelectKBest(f_regression, k=p)
+    selector2_1_1.fit(X_train, y_train)
+    list1 = X.columns[X_indices[selector2_1_1.get_support()]]
+
+    # 2.1.1.2 mutual_info_regression
+    selector2_1_2 = SelectKBest(mutual_info_regression, k=p)
+    selector2_1_2.fit(X_train, y_train)
+    list2 = X.columns[X_indices[selector2_1_2.get_support()]]
+
+    # 2.3.2 Tree-based feature selection
+    from sklearn.ensemble import ExtraTreesRegressor
+    # Build a forest and compute the feature importances
+    forest = ExtraTreesRegressor(n_estimators=250,
+                                 random_state=0)
+
+    forest.fit(X_train, y_train)
+    importances = forest.feature_importances_
+    indices = np.argsort(importances)[::-1]
+    list3 = []
+    for i in indices[:p]:
+        list3.append(a[i])
+    a = [x for x in list1 if x in list2]
+    b = [x for x in a if x in list3]
+    X_1 = X_train.loc[:, b]
+    Y_1 = y_train
+    model = XGBRegressor()
+    predicted = cross_val_score(model, X_1, Y_1, cv=10, scoring="r2")
+    return np.mean(predicted), b
+
+list4={}
+for i in range(25,81):
+    list4[i] = model_r2_score(i)[0]
+list5 = list(list4.values())
+
+plt.rcParams['font.family'] = 'Heiti TC'
+plt.figure(figsize=(30,10),dpi = 300)
+plt.bar(np.arange(25,81), list5)
+plt.xticks(np.arange(25,81),size = 12)
+plt.suptitle("训练集10倍交叉检验$\mathregular{R^2}$",size=30,c = "red")
+plt.title("三种特征筛选方法选取前25-80特征",size=18,loc = "right")
+plt.yticks(np.arange(0,1.05,0.05))
+plt.ylim(0,1.1)
+for xx, yy in zip(np.arange(25,81),list5):
+    plt.text(xx, yy+0.005, "%.2f"%np.float(yy), ha='center')
+plt.show()
+
+list_6 = model_r2_score(58)[1]
+
+def regression_plot_1():
+    X = df_full[list_6]
+    y = df_full[target]
+    X_train,X_val,y_train,y_val = train_test_split(X,y,test_size=0.2,random_state= 123)
+    model = XGBRegressor()
+    model.fit(X_train,y_train)
+    y_val_predict = model.predict(X_val)
+    plt.figure(figsize = (5,3),dpi = 300)
+    plt.scatter(y_val,y_val_predict,color = "b",alpha = 0.5,s = 25)
+    slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(y_val,y_val_predict)
+    print(slope,intercept)
+    plt.plot([0,24],[intercept,24*slope+intercept],color='navy',linestyle='-.', linewidth=1.5,alpha = 0.5)
+    plt.text(5,10, "y={0:.3f}x +{0:.3f}".format(slope,intercept), rotation = 26.5,size = 10,\
+            family = "fantasy", color = "r", style = "italic", weight = "light",\
+            bbox = dict(facecolor = "b", alpha = 0.2))
+    plt.text(0, 22, "MSE:{0:.5f}".format(mean_squared_error(y_val,y_val_predict)), size = 12,\
+            family = "fantasy", color = "r", style = "italic", weight = "light",\
+            bbox = dict(facecolor = "b", alpha = 0.2))
+    plt.text(0, 18, "R2:{0:.5f}".format(r_value**2,multioutput= 'uniform_average'), size = 12,\
+            family = "fantasy", color = "r", style = "italic", weight = "light",\
+            bbox = dict(facecolor = "b", alpha = 0.2))
+    plt.ylim(-2,25)
+    plt.show()
+
+regression_plot_1()
